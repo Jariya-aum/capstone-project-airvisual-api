@@ -6,6 +6,7 @@ import json
 import pendulum
 from psycopg2.errors import UniqueViolation
 from datetime import datetime, timedelta
+import psycopg2
 
 local_tz = pendulum.timezone("Asia/Bangkok")
 
@@ -13,9 +14,8 @@ local_tz = pendulum.timezone("Asia/Bangkok")
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
-    'start_date': datetime(2025, 3, 28),  # กำหนดวันเริ่มต้น
+    'start_date': datetime(2025, 3, 29),  # กำหนดวันเริ่มต้น
     'retries': 1,
-    # 'retry_delay': timedelta(minutes=5),
 }
 
 # สร้าง DAG
@@ -23,16 +23,16 @@ dag = DAG(
     'etl_airquality',
     default_args=default_args,
     description='ETL Pipeline for Air Quality Data',
-    schedule_interval='0 10 * * *',  # รันทุกวันเวลา 10:00 ตามเวลาไทย
-    start_date=datetime(2025, 3, 28, tzinfo=local_tz),  # ตั้งค่า Timezone
+    schedule_interval='30 14 * * *',  # รันทุกวันเวลา 10:00 ตามเวลาไทย
+    start_date=datetime(2025, 3, 29, tzinfo=local_tz),  # ตั้งค่า Timezone
     catchup=False, # ป้องกันการรันย้อนหลัง (เลือกใช้ตามความเหมาะสม)
-    tags=["joke", "lolo", "my_first_dag"],
+    tags=["dpu"],
 )
 
 # **1️⃣ EXTRACT: ดึงข้อมูลจาก API**
 def extract_data():
     API_KEY = "ca802658-e8b7-4810-91e5-a304faf0f38c"
-    city, state, country = 'Bangkok', 'Bangkok', 'Thailand'
+    city, state, country = 'Chatuchak', 'Bangkok', 'Thailand'
     
     url = f"http://api.airvisual.com/v2/city?city={city}&state={state}&country={country}&key={API_KEY}"
     response = requests.get(url)
@@ -79,16 +79,51 @@ def transform_data():
     except Exception as e:
         print(f"❌ Error transforming data: {e}")
 
+# def create_airquality_table():
+#     pg_hook = PostgresHook(
+#         postgres_conn_id="airvisual_postgres_conn",
+#         schema="airflow_etl"
+#     )
+#     connection = pg_hook.get_conn()
+#     cursor = connection.cursor()
+
+#     sql = """
+#         CREATE TABLE IF NOT EXISTS air_api.air_quality (
+#             id SERIAL PRIMARY KEY,
+#             city VARCHAR(50),
+#             state VARCHAR(50),
+#             country VARCHAR(50),
+#             timestamp TIMESTAMP,
+#             aqius INT,
+#             mainus VARCHAR(10),
+#             aqicn INT,
+#             maincn VARCHAR(10),
+#             temp INT,
+#             pressure INT,
+#             humidity INT,
+#             wind_speed FLOAT,
+#             wind_direction INT,
+#             weather_icon VARCHAR(10)
+#         )
+#     """
+#     cursor.execute(sql)
+#     connection.commit()
+
 def create_airquality_table():
-    pg_hook = PostgresHook(
-        postgres_conn_id="airvisual_postgres_conn",
-        schema="opendata"
+    """สร้างตาราง air_quality ใน PostgreSQL"""
+    
+    # ตั้งค่าการเชื่อมต่อฐานข้อมูล
+    conn = psycopg2.connect(
+        host="postgres",           # ถ้าเป็น Docker ให้ใช้ชื่อ service ของ PostgreSQL
+        database="airflow_etl",    # ชื่อ Database
+        user="postgres",      # ชื่อ User
+        password="postgres",  # รหัสผ่าน
+        port="5431"
     )
-    connection = pg_hook.get_conn()
-    cursor = connection.cursor()
+    cursor = conn.cursor()
 
     sql = """
-        CREATE TABLE IF NOT EXISTS airflow.air_quality (
+        CREATE TABLE IF NOT EXISTS air_api.air_quality (
             id SERIAL PRIMARY KEY,
             city VARCHAR(50),
             state VARCHAR(50),
@@ -107,20 +142,80 @@ def create_airquality_table():
         )
     """
     cursor.execute(sql)
-    connection.commit()
+    conn.commit()
+
+    cursor.close()
+    conn.close()
+    print("✅ Table created successfully")
 
 # **3️⃣ LOAD: นำข้อมูลเข้า PostgreSQL**
+# def load_data():
+#     """โหลดข้อมูลเข้าสู่ PostgreSQL โดยใช้ PostgresHook"""
+
+#     # เชื่อมต่อกับ PostgreSQL ผ่าน Airflow Connection
+#     pg_hook = PostgresHook(
+#         postgres_conn_id="airvisual_postgres_conn", 
+#         schema="airflow_etl")
+#     connection = pg_hook.get_conn()
+#     cursor = connection.cursor()
+
+#     # อ่านข้อมูลจากไฟล์ JSON ที่ extract มา
+#     with open("/opt/airflow/dags/airquality_transformed.json", "r") as f:
+#         data = json.load(f)
+
+#     # ดึงข้อมูลจาก JSON
+#     city = data["city"]
+#     state = data["state"]
+#     country = data["country"]
+#     timestamp = data["timestamp"]
+#     aqius = data["aqius"]
+#     mainus = data["mainus"]
+#     aqicn = data["aqicn"]
+#     maincn = data["maincn"]
+#     temp = data["temp"]
+#     pressure = data["pressure"]
+#     humidity = data["humidity"]
+#     wind_speed = data["wind_speed"]
+#     wind_direction = data["wind_direction"]
+#     weather_icon = data["weather_icon"]
+
+#     # SQL สำหรับ INSERT ข้อมูล
+#     sql = """
+#         INSERT INTO air_api.air_quality (
+#             city, state, country, timestamp, aqius, mainus, aqicn, maincn,
+#             temp, pressure, humidity, wind_speed, wind_direction, weather_icon
+#         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+#         """
+#     values = (
+#         city, state, country, timestamp, aqius, mainus, aqicn, maincn,
+#         temp, pressure, humidity, wind_speed, wind_direction, weather_icon
+#     )
+
+#     try:
+#         cursor.execute(sql, values)
+#         connection.commit()
+#         print("✅ Data inserted successfully นำเข้าข้อมูลสำเร็จ")
+#     except UniqueViolation:  # ✅ ดักจับข้อผิดพลาด Unique Constraint
+#         connection.rollback()  # ย้อนกลับการเปลี่ยนแปลง
+#         print("⚠️ Duplicate Entry: Skipping this step พบข้อมูลซ้ำ ทำการข้ามขั้นตอนนี้")
+#     finally:
+#         cursor.close()
+#         connection.close()
+
 def load_data():
-    """โหลดข้อมูลเข้าสู่ PostgreSQL โดยใช้ PostgresHook"""
+    """โหลดข้อมูลเข้าสู่ PostgreSQL โดยใช้ psycopg2"""
 
-    # เชื่อมต่อกับ PostgreSQL ผ่าน Airflow Connection
-    pg_hook = PostgresHook(
-        postgres_conn_id="airvisual_postgres_conn", 
-        schema="opendata")
-    connection = pg_hook.get_conn()
-    cursor = connection.cursor()
+    # เชื่อมต่อกับ PostgreSQL
+    conn = psycopg2.connect(
+        host="postgres",           
+        database="airflow_etl",
+        user="postgres",
+        password="postgres",
+        port="5431"
+    )
+    cursor = conn.cursor()
 
-    # อ่านข้อมูลจากไฟล์ JSON ที่ extract มา
+    # อ่านข้อมูลจากไฟล์ JSON
     with open("/opt/airflow/dags/airquality_transformed.json", "r") as f:
         data = json.load(f)
 
@@ -142,11 +237,11 @@ def load_data():
 
     # SQL สำหรับ INSERT ข้อมูล
     sql = """
-        INSERT INTO airflow.air_quality (
+        INSERT INTO air_api.air_quality (
             city, state, country, timestamp, aqius, mainus, aqicn, maincn,
             temp, pressure, humidity, wind_speed, wind_direction, weather_icon
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
-        """
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
     values = (
         city, state, country, timestamp, aqius, mainus, aqicn, maincn,
         temp, pressure, humidity, wind_speed, wind_direction, weather_icon
@@ -154,14 +249,14 @@ def load_data():
 
     try:
         cursor.execute(sql, values)
-        connection.commit()
+        conn.commit()
         print("✅ Data inserted successfully นำเข้าข้อมูลสำเร็จ")
-    except UniqueViolation:  # ✅ ดักจับข้อผิดพลาด Unique Constraint
-        connection.rollback()  # ย้อนกลับการเปลี่ยนแปลง
+    except psycopg2.IntegrityError:  
+        conn.rollback()  # ย้อนกลับการเปลี่ยนแปลง
         print("⚠️ Duplicate Entry: Skipping this step พบข้อมูลซ้ำ ทำการข้ามขั้นตอนนี้")
     finally:
         cursor.close()
-        connection.close()
+        conn.close()
 
 # **สร้าง Tasks สำหรับ DAG**
 extract_task = PythonOperator(
