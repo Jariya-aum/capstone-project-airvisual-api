@@ -1,0 +1,22 @@
+#สร้างข้อมูลในตาราง database pgAdmin
+
+CREATE TABLE air_quality (
+    id SERIAL PRIMARY KEY,
+    city VARCHAR(100),
+    state VARCHAR(100),
+    country VARCHAR(100),
+    timestamp TIMESTAMP,
+    aqius INT,
+    mainus VARCHAR(10),
+    aqicn INT,
+    maincn VARCHAR(10),
+    temp FLOAT,
+    pressure FLOAT,
+    humidity FLOAT,
+    wind_speed FLOAT,
+    wind_direction FLOAT,
+    weather_icon VARCHAR(50)
+);
+
+SELECT * FROM air_api.air_quality
+ORDER BY id ASC LIMIT 100
